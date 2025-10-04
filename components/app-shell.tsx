@@ -7,6 +7,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,12 +18,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { FAB } from "./fab";
 import { useAppStore } from "@/lib/store";
-import { LayoutDashboard, CheckSquare, DollarSign, Settings, Menu, Search, Bell, User, LogOut } from "lucide-react";
+import { LayoutDashboard, CheckSquare, DollarSign, Settings, Menu, Search, Bell, User, LogOut, BookOpen } from "lucide-react";
+
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Tasks", href: "/tasks", icon: CheckSquare },
   { name: "Finance", href: "/finance", icon: DollarSign },
+  { name: "Materi", href: "/materials", icon: BookOpen },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 

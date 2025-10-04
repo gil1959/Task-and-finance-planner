@@ -1,18 +1,25 @@
-// app/api/me/route.ts
+export const revalidate = 0;
+export const dynamic = "force-dynamic";
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getUserFromCookie } from "@/lib/auth-helpers";
 
-// Balikin info user berdasarkan cookie JWT httpOnly
 export async function GET() {
     const session = await getUserFromCookie<{ id: number; email: string }>();
-    if (!session) return NextResponse.json(null); // belum login
 
-    // Ambil data user yang dibutuhin FE
+    if (!session) {
+        const res = NextResponse.json(null);
+        res.headers.set("Cache-Control", "no-store");
+        return res;
+    }
+
     const user = await prisma.user.findUnique({
         where: { id: session.id },
-        select: { id: true, email: true, name: true, createdAt: true }, // createdAt ikut biar cocok tipe
+        select: { id: true, email: true, name: true, createdAt: true },
     });
 
-    return NextResponse.json(user);
+    const res = NextResponse.json(user);
+    res.headers.set("Cache-Control", "no-store");
+    return res;
 }

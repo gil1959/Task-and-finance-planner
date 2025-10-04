@@ -1,6 +1,5 @@
 "use client";
 
-import type React from "react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -9,37 +8,63 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useAppStore } from "@/lib/store";
-import { Eye, EyeOff, LogIn, ArrowLeft } from "lucide-react";
+import { ArrowLeft, LogIn } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
-  const login = useAppStore((s) => s.login);
-  const isLoading = useAppStore((s) => s.auth.isLoading);
-
-  const [formData, setFormData] = useState({ email: "", password: "" });
-  const [showPassword, setShowPassword] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setUnverifiedEmail(null);
+    setIsSubmitting(true);
 
-    if (!formData.email || !formData.password) {
-      setError("Semua field harus diisi");
-      return;
-    }
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
 
-    const result = await login(formData.email, formData.password);
-    if (result.success) {
-      router.push("/dashboard");
-    } else {
-      setError(result.error || "Terjadi kesalahan saat login");
+      if (res.status === 403) {
+        setError(data.error || "Email belum diverifikasi.");
+        setUnverifiedEmail(email);
+        return;
+      }
+      if (!res.ok) {
+        setError(data.error || "Email atau password salah");
+        return;
+      }
+
+
+      router.replace("/dashboard");
+      router.refresh();
+    } catch (err: any) {
+      setError(err?.message || "Terjadi kesalahan");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) =>
-    setFormData((p) => ({ ...p, [e.target.name]: e.target.value }));
+  const resend = async () => {
+    if (!unverifiedEmail) return;
+    try {
+      await fetch("/api/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: unverifiedEmail }),
+      });
+      alert("Tautan verifikasi dikirim ulang. Cek inbox/spam.");
+    } catch {
+      alert("Gagal mengirim ulang tautan. Coba lagi nanti.");
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 flex items-center justify-center p-4">
@@ -55,13 +80,11 @@ export default function LoginPage() {
 
         <Card className="shadow-xl border-0">
           <CardHeader className="text-center space-y-2">
-            <CardTitle className="text-2xl font-bold">Masuk ke Akun</CardTitle>
-            <CardDescription className="text-base">
-              Masukkan email dan password untuk mengakses dashboard Anda
-            </CardDescription>
+            <CardTitle className="text-2xl font-bold">Masuk</CardTitle>
+            <CardDescription className="text-base">Akses dashboard tugas & keuangan Anda</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={onSubmit} className="space-y-4">
               {error && (
                 <Alert variant="destructive">
                   <AlertDescription>{error}</AlertDescription>
@@ -70,68 +93,31 @@ export default function LoginPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  name="email"
-                  type="email"
-                  placeholder="nama@email.com"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  disabled={isLoading}
-                  className="h-11"
-                />
+                <Input id="email" type="email" placeholder="nama@email.com" value={email} onChange={(e) => setEmail(e.target.value)} disabled={isSubmitting} className="h-11" />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    name="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Masukkan password"
-                    value={formData.password}
-                    onChange={handleInputChange}
-                    disabled={isLoading}
-                    className="h-11 pr-10"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-0 top-0 h-11 px-3 hover:bg-transparent"
-                    onClick={() => setShowPassword((v) => !v)}
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4 text-muted-foreground" /> : <Eye className="h-4 w-4 text-muted-foreground" />}
-                  </Button>
-                </div>
+                <Input id="password" type="password" placeholder="Masukkan password" value={password} onChange={(e) => setPassword(e.target.value)} disabled={isSubmitting} className="h-11" />
               </div>
 
-              <Button type="submit" className="w-full h-11 text-base" disabled={isLoading}>
-                {isLoading ? "Memproses..." : (<><LogIn className="mr-2 h-4 w-4" />Masuk</>)}
+              <Button type="submit" className="w-full h-11 text-base" disabled={isSubmitting}>
+                {isSubmitting ? "Memproses..." : (<><LogIn className="mr-2 h-4 w-4" />Masuk</>)}
               </Button>
-            </form>
 
-            <div className="mt-6 text-center">
-              <p className="text-sm text-muted-foreground">
+              {unverifiedEmail && (
+                <Button type="button" variant="outline" className="w-full h-11 text-base mt-2" onClick={resend} disabled={isSubmitting}>
+                  Kirim Ulang Email Verifikasi
+                </Button>
+              )}
+
+              <div className="mt-2 text-center text-sm text-muted-foreground">
                 Belum punya akun?{" "}
                 <Link href="/register" className="text-primary hover:underline font-medium">
-                  Daftar sekarang
+                  Daftar
                 </Link>
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-muted/50 border-dashed">
-          <CardContent className="pt-6">
-            <div className="text-center space-y-2">
-              <p className="text-sm font-medium text-muted-foreground">Demo Account</p>
-              <div className="text-xs text-muted-foreground space-y-1">
-                <p>Email: demo@taskplanner.com</p>
-                <p>Password: demo123</p>
               </div>
-            </div>
+            </form>
           </CardContent>
         </Card>
       </div>

@@ -8,16 +8,32 @@ datasource db {
 }
 
 model User {
-  id           Int           @id @default(autoincrement())
-  email        String        @unique
-  password     String
-  name         String
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  tasks        Task[]
-  transactions Transaction[]
-  budgets      Budget[]
-  categories   Category[]
+  id                 Int                 @id @default(autoincrement())
+  email              String              @unique
+  password           String // simpan hash di sini
+  name               String
+  emailVerified      DateTime? // <— tambahkan ini untuk verifikasi email
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  tasks              Task[]
+  transactions       Transaction[]
+  budgets            Budget[]
+  categories         Category[]
+  verificationTokens VerificationToken[]
+  materials          Material[]
+}
+
+model VerificationToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    Int // <— ubah ke Int agar match User.id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([token])
+  @@index([expiresAt])
+  @@index([userId])
 }
 
 model Task {
@@ -31,7 +47,8 @@ model Task {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  user        User      @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
   @@index([userId])
 }
 
@@ -42,8 +59,8 @@ model Category {
   type      CategoryType
   createdAt DateTime     @default(now())
 
-  user      User         @relation(fields: [userId], references: [id])
-  tx        Transaction[]
+  user User          @relation(fields: [userId], references: [id])
+  tx   Transaction[]
 
   @@unique([userId, name, type])
 }
@@ -60,29 +77,46 @@ enum TranType {
 }
 
 model Transaction {
-  id          Int        @id @default(autoincrement())
-  userId      Int
-  type        TranType   @default(EXPENSE)   // ✅ kolom baru buat FE
-  categoryId  Int?
-  date        DateTime   @default(now())
-  amount      Decimal    @db.Decimal(12,2)
-  note        String?    @db.Text
-  createdAt   DateTime   @default(now())
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  type       TranType @default(EXPENSE)
+  categoryId Int?
+  date       DateTime @default(now())
+  amount     Decimal  @db.Decimal(12, 2)
+  note       String?  @db.Text
+  createdAt  DateTime @default(now())
 
-  user        User       @relation(fields: [userId], references: [id])
-  category    Category?  @relation(fields: [categoryId], references: [id])
+  user     User      @relation(fields: [userId], references: [id])
+  category Category? @relation(fields: [categoryId], references: [id])
 
   @@index([userId, date])
   @@index([categoryId])
 }
 
 model Budget {
-  id          Int       @id @default(autoincrement())
+  id          Int     @id @default(autoincrement())
   userId      Int
   month       Int
   year        Int
-  limitAmount Decimal   @db.Decimal(12,2)
+  limitAmount Decimal @db.Decimal(12, 2)
 
-  user        User      @relation(fields: [userId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
   @@unique([userId, month, year])
+}
+
+model Material {
+  id          Int      @id @default(autoincrement())
+  title       String
+  date        DateTime @default(now())
+  audioUrl    String
+  durationSec Int
+  transcript  String?  @db.Text
+  summary     String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id]) // bisa tambah onDelete: Cascade kalau mau
+
+  @@index([userId])
 }

@@ -1,42 +1,46 @@
-"use client"
+// components/protected-route.tsx
+"use client";
 
-import type React from "react"
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { useAppStore } from "@/lib/store"
-import { Loader2 } from "lucide-react"
-
-interface ProtectedRouteProps {
-  children: React.ReactNode
-}
-
-export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const router = useRouter()
-  const { isAuthenticated, isLoading } = useAppStore((state) => state.auth)
+export function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const [status, setStatus] = useState<"loading" | "authed" | "guest">("loading");
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.push("/login")
-    }
-  }, [isAuthenticated, isLoading, router])
+    let alive = true;
 
-  // Show loading spinner while checking authentication
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center space-y-4">
-          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-          <p className="text-muted-foreground">Memuat...</p>
-        </div>
-      </div>
-    )
+    (async () => {
+      try {
+        const r = await fetch("/api/me", { cache: "no-store", credentials: "include" });
+        const me = await r.json();
+        if (!alive) return;
+
+        if (me) {
+          setStatus("authed");
+        } else {
+          setStatus("guest");
+          router.replace("/login");
+        }
+      } catch {
+        if (!alive) return;
+        setStatus("guest");
+        router.replace("/login");
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [router]);
+
+  if (status === "loading") {
+    // Loader ringan (hindari redirect saat loading supaya tak kedip/loop)
+    return <div className="p-6 text-sm text-muted-foreground">Memuat…</div>;
   }
 
-  // Don't render children if not authenticated
-  if (!isAuthenticated) {
-    return null
-  }
+  if (status === "guest") return null;
 
-  return <>{children}</>
+  return <>{children}</>;
 }
