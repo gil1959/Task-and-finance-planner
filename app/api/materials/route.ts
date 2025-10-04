@@ -1,12 +1,14 @@
+// app/api/materials/route.ts
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 import { prisma } from "@/lib/db";
 import { NextResponse } from "next/server";
 import { getUserFromCookie } from "@/lib/auth-helpers";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
+import { put } from "@vercel/blob";
 import { randomUUID } from "crypto";
 
-export const dynamic = "force-dynamic";
-
+// GET: list materi (biarkan seperti semula)
 export async function GET() {
     const me = await getUserFromCookie<{ id: number }>();
     if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -18,7 +20,7 @@ export async function GET() {
     return NextResponse.json(items);
 }
 
-// Expect form-data: file(audio/webm), title, date(optional), durationSec
+// POST: terima form-data (file, title, date, durationSec) dan simpan ke Vercel Blob
 export async function POST(req: Request) {
     const me = await getUserFromCookie<{ id: number }>();
     if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -31,23 +33,23 @@ export async function POST(req: Request) {
 
     if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
 
-    const bytes = Buffer.from(await file.arrayBuffer());
-    const uploadsDir = path.join(process.cwd(), "public", "uploads", "materials");
-    await mkdir(uploadsDir, { recursive: true });
+    // Tentukan ekstensi dari MIME (MediaRecorder umumnya "audio/webm")
+    const ext =
+        file.type?.includes("webm") ? "webm" :
+            file.type?.includes("wav") ? "wav" :
+                file.type?.includes("mpeg") ? "mp3" : "webm";
 
-    const ext = (file.type.includes("webm") ? "webm" : "wav"); // default webm
-    const filename = `${randomUUID()}.${ext}`;
-    const fullpath = path.join(uploadsDir, filename);
-    await writeFile(fullpath, bytes);
+    // Simpan ke Vercel Blob (public). Token dibaca dari ENV: BLOB_READ_WRITE_TOKEN
+    const key = `materials/${randomUUID()}.${ext}`;
+    const blob = await put(key, file.stream(), { access: "public" });
 
-    const audioUrl = `/uploads/materials/${filename}`;
-
+    // Simpan URL blob ke DB
     const material = await prisma.material.create({
         data: {
             title,
             date: new Date(dateStr),
-            audioUrl,
-            durationSec: isNaN(durationSec) ? 0 : durationSec,
+            audioUrl: blob.url, // URL publik (ex: https://blob.vercel-storage.com/...)
+            durationSec: Number.isNaN(durationSec) ? 0 : durationSec,
             userId: me.id,
         },
     });
