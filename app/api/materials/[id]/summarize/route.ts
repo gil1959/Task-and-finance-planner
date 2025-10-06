@@ -5,57 +5,30 @@ export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/db";
 import { NextResponse } from "next/server";
 import { getUserFromCookie } from "@/lib/auth-helpers";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const MODEL_CANDIDATES = [
-    "models/gemini-2.5-flash",
-    "models/gemini-2.0-flash",
-    "models/gemini-1.5-flash",
-    "models/gemini-1.5-pro",
+const MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
 ];
 
-async function generateSummary(
-    base: string,
-    apiKey: string,
-    modelId: string,
-    mimeType: string,
-    base64: string
-) {
-    const url = `${base}/${modelId}:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const prompt =
-        "Ringkas materi kuliah ini menjadi poin rapi (judul, highlight, bullet, istilah penting) dalam bahasa Indonesia.";
-    const body = {
-        contents: [
-            {
-                role: "user",
-                parts: [
-                    { text: prompt },
-                    { inlineData: { mimeType, data: base64 } }, // camelCase aman untuk v1 & v1beta
-                ],
-            },
-        ],
-    };
+// beberapa model tidak suka webm; kalau ketemu webm kita tetap coba,
+// tapi kalau ditolak, kita kasih pesan jelas.
+const SUPPORTED_MIMES = new Set([
+    "audio/mpeg", // mp3
+    "audio/mp3",
+    "audio/wav",
+    "audio/ogg",
+    "audio/webm", // kita coba juga; jika ditolak, akan dapat error 400
+]);
 
-    const r = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-    });
 
-    const text = await r.text();
-    if (!r.ok) return { ok: false as const, status: r.status, modelId, base, error: text.slice(0, 1200) };
-
-    const j = JSON.parse(text);
-    const summary =
-        j?.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("") ??
-        j?.candidates?.[0]?.content?.parts?.[0]?.text ??
-        "";
-
-    return { ok: true as const, summary };
-}
 
 export async function POST(
     _req: Request,
-    ctx: { params: Promise<{ id: string }> } // Next.js 15: params harus di-await
+    ctx: { params: Promise<{ id: string }> } // Next 15: params harus di-await
 ) {
     try {
         const apiKey = process.env.GOOGLE_API_KEY;
@@ -64,55 +37,113 @@ export async function POST(
         const me = await getUserFromCookie<{ id: number }>();
         if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-        const { id: idStr } = await ctx.params; // WAJIB await
+        const { id: idStr } = await ctx.params;
         const id = Number(idStr);
         if (!id || Number.isNaN(id)) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
 
         const material = await prisma.material.findFirst({ where: { id, userId: me.id } });
         if (!material) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-        // Ambil audio dari URL (Blob), bukan dari file lokal
-        const resFile = await fetch(material.audioUrl);
-        if (!resFile.ok) throw new Error(`Cannot fetch audio: ${material.audioUrl}`);
+        // --- fetch audio dari Blob URL ---
+        const fileRes = await fetch(material.audioUrl);
+        if (!fileRes.ok) {
+            return NextResponse.json(
+                { error: `Cannot fetch audio (${fileRes.status})`, url: material.audioUrl },
+                { status: 400 }
+            );
+        }
+        const arr = await fileRes.arrayBuffer();
+        const bytes = Buffer.from(arr);
 
-        const arrayBuf = await resFile.arrayBuffer();
-        const buff = Buffer.from(arrayBuf);
+        // batasi ukuran ±18MB untuk aman
+        const MAX = 18 * 1024 * 1024;
+        if (bytes.byteLength > MAX) {
+            return NextResponse.json(
+                { error: `File audio terlalu besar: ${(bytes.byteLength / 1024 / 1024).toFixed(2)} MB (maks ~18 MB)` },
+                { status: 413 }
+            );
+        }
 
-        const mimeType =
-            resFile.headers.get("content-type") ||
-            (material.audioUrl.endsWith(".webm") ? "audio/webm" :
-                material.audioUrl.endsWith(".wav") ? "audio/wav" :
-                    material.audioUrl.endsWith(".mp3") ? "audio/mpeg" : "audio/webm");
+        const headerMime = fileRes.headers.get("content-type") || "";
+        let mimeType =
+            headerMime ||
+            (material.audioUrl.endsWith(".mp3")
+                ? "audio/mpeg"
+                : material.audioUrl.endsWith(".wav")
+                    ? "audio/wav"
+                    : material.audioUrl.endsWith(".ogg")
+                        ? "audio/ogg"
+                        : material.audioUrl.endsWith(".webm")
+                            ? "audio/webm"
+                            : "application/octet-stream");
 
-        const base64 = buff.toString("base64");
+        // 🔽 PATCH: normalisasi kalau Blob balikin "video/webm" (umum terjadi utk rekaman audio WebM/Opus)
+        if (mimeType.startsWith("video/webm")) {
+            mimeType = "audio/webm";
+        }
 
-        // Coba endpoint v1 → v1beta, dan beberapa model kandidat
-        const bases = [
-            "https://generativelanguage.googleapis.com/v1",
-            "https://generativelanguage.googleapis.com/v1beta",
-        ];
+        // 🔽 PATCH tambahan: kalau mimetype nggak jelas, coba sniff signature WebM (1A 45 DF A3)
+        if (mimeType === "application/octet-stream") {
+            const isWebm =
+                bytes.length > 4 &&
+                bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3;
+            if (isWebm) mimeType = "audio/webm";
+        }
+
+        const base64 = bytes.toString("base64");
+
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const prompt =
+            "Ringkas materi kuliah ini menjadi poin rapi (judul, highlight, bullet, istilah penting) dalam bahasa Indonesia dan jangan ada kalimat yang bold serta tanda **, -- dan sebagai nya yang brlebihan.";
 
         let lastErr: any = null;
-        for (const base of bases) {
-            for (const model of MODEL_CANDIDATES) {
-                const r = await generateSummary(base, apiKey, model, mimeType, base64);
-                if (r.ok) {
+
+        for (const m of MODELS) {
+            try {
+                const model = genAI.getGenerativeModel({ model: m });
+
+                // SDK format: array of parts, gunakan inlineData (SDK yang urus detail JSON)
+                const result = await model.generateContent([
+                    { text: prompt },
+                    { inlineData: { mimeType, data: base64 } },
+                ]);
+
+                const text = result?.response?.text?.() ?? "";
+                if (text && text.trim()) {
                     const updated = await prisma.material.update({
                         where: { id: material.id },
-                        data: { summary: r.summary },
+                        data: { summary: text },
                     });
                     return NextResponse.json(updated);
-                } else {
-                    lastErr = r;
+                }
+
+                lastErr = { model: m, error: "Empty text()" };
+            } catch (e: any) {
+                // tangkap pesan error dari SDK/REST
+                lastErr = { model: m, error: e?.message || String(e) };
+
+                // jika jelas-jelas karena mime webm ditolak, balikin pesan actionable
+                if (/mime/i.test(String(e)) || /unsupported/i.test(String(e))) {
+                    return NextResponse.json(
+                        {
+                            error:
+                                "Format audio tidak didukung model. Coba unggah MP3/WAV/OGG (webm/opus sering ditolak oleh Gemini).",
+                            detail: lastErr,
+                        },
+                        { status: 400 }
+                    );
                 }
             }
         }
 
         return NextResponse.json(
-            { error: "All attempts failed", detail: lastErr },
+            {
+                error: "Gagal merangkum (semua model gagal).",
+                detail: lastErr,
+            },
             { status: 500 }
         );
     } catch (e: any) {
-        return NextResponse.json({ error: String(e?.message || e) }, { status: 500 });
+        return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });
     }
 }
