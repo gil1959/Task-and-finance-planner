@@ -3,9 +3,10 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")   // pooling (6543) untuk runtime
-  directUrl = env("DIRECT_URL")     // direct (5432) untuk migrate
+  provider  = "mysql"
+  url       = env("DATABASE_URL")
+  // kalau mau, boleh pakai directUrl juga, tapi harus MySQL juga:
+  // directUrl = env("DIRECT_URL")
 }
 
 model User {
