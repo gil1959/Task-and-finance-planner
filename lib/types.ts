@@ -20,6 +20,29 @@ export interface Transaction {
   note: string;
 }
 
+export type Weekday =
+  | "monday"
+  | "tuesday"
+  | "wednesday"
+  | "thursday"
+  | "friday"
+  | "saturday"
+  | "sunday";
+
+export interface ScheduleItem {
+  id: string;
+  courseName: string;
+  courseCode?: string;
+  day: Weekday;          // "monday" | ... | "sunday"
+  startTime: string;     // "08:00"
+  endTime: string;       // "09:40"
+  room?: string;
+  lecturer?: string;
+  semester: string;      // mis: "Ganjil 2024/2025"
+  reminderHoursBefore: number; // jam sebelum kuliah (0 = off)
+  createdAt: string;
+}
+
 export interface User {
   id: number;                 // <— number (bukan string)
   email: string;
@@ -36,5 +59,6 @@ export interface AuthState {
 export interface AppState {
   tasks: Task[];
   transactions: Transaction[];
+  schedules: ScheduleItem[];
   auth: AuthState;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { AppState, Task, Transaction } from "./types";
+import type { AppState, Task, Transaction, ScheduleItem } from "./types";
 import {
   getCurrentSession,
   login as authLogin,
@@ -62,6 +62,37 @@ function mapApiTaskToFE(api: any): Task {
   };
 }
 
+function mapApiScheduleToFE(api: any): ScheduleItem {
+  return {
+    id: String(api.id),
+    courseName: api.courseName,
+    courseCode: api.courseCode ?? "",
+    day: api.day as ScheduleItem["day"],
+    startTime: api.startTime,
+    endTime: api.endTime,
+    room: api.room ?? "",
+    lecturer: api.lecturer ?? "",
+    semester: api.semester,
+    reminderHoursBefore: Number(api.reminderHoursBefore ?? 0),
+    createdAt: new Date(api.createdAt).toISOString(),
+  };
+}
+
+// FE (tanpa id & createdAt) → payload API / Prisma
+function mapFEScheduleToApi(fe: Omit<ScheduleItem, "id" | "createdAt">) {
+  return {
+    courseName: fe.courseName,
+    courseCode: fe.courseCode || null,
+    day: fe.day,
+    startTime: fe.startTime,
+    endTime: fe.endTime,
+    room: fe.room || null,
+    lecturer: fe.lecturer || null,
+    semester: fe.semester,
+    reminderHoursBefore: Number(fe.reminderHoursBefore ?? 0),
+  };
+}
+
 // FE (tanpa id/createdAt) → Task (Prisma)
 function mapFETaskToApi(fe: Omit<Task, "id" | "createdAt">) {
   return {
@@ -112,6 +143,12 @@ interface AppStore extends AppState {
   updateTransaction: (id: string | number, updates: Partial<Transaction>) => Promise<void>;
   deleteTransaction: (id: string | number) => Promise<void>;
 
+  // 🔔 Jadwal Kuliah
+  addSchedule: (data: Omit<ScheduleItem, "id" | "createdAt">) => Promise<void>;
+  updateSchedule: (id: string | number, updates: Partial<ScheduleItem>) => Promise<void>;
+  deleteSchedule: (id: string | number) => Promise<void>;
+  loadSchedules: () => Promise<void>;
+
   // Auth
   login: (
     email: string,
@@ -132,6 +169,9 @@ interface AppStore extends AppState {
 export const useAppStore = create<AppStore>((set, get) => ({
   tasks: [],
   transactions: [],
+
+  schedules: [],
+
   auth: {
     user: null,
     isAuthenticated: false,
@@ -218,6 +258,72 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }));
   },
 
+  /* ===== Schedules (API) ===== */
+
+  addSchedule: async (data) => {
+    const payload = mapFEScheduleToApi(data);
+    const created = await apiPost<any>("/api/schedules", payload);
+    const fe = mapApiScheduleToFE(created);
+
+    set((state) => ({
+      schedules: [...state.schedules, fe],
+    }));
+  },
+
+  updateSchedule: async (id, updates) => {
+    const current = get().schedules.find((s) => s.id === String(id));
+    if (!current) return;
+
+    const merged = {
+      ...current,
+      ...updates,
+    };
+
+    const payload = mapFEScheduleToApi({
+      courseName: merged.courseName,
+      courseCode: merged.courseCode,
+      day: merged.day,
+      startTime: merged.startTime,
+      endTime: merged.endTime,
+      room: merged.room,
+      lecturer: merged.lecturer,
+      semester: merged.semester,
+      reminderHoursBefore: merged.reminderHoursBefore,
+    });
+
+    const updated = await apiPut<any>(`/api/schedules/${id}`, payload);
+    const fe = mapApiScheduleToFE(updated);
+
+    set((state) => ({
+      schedules: state.schedules.map((s) =>
+        s.id === String(id) ? fe : s
+      ),
+    }));
+  },
+
+  deleteSchedule: async (id) => {
+    await apiDelete(`/api/schedules/${id}`);
+
+    set((state) => ({
+      schedules: state.schedules.filter((s) => s.id !== String(id)),
+    }));
+  },
+
+  loadSchedules: async () => {
+    try {
+      const data = await apiGet<any[]>("/api/schedules");
+      const schedules = (data ?? []).map(mapApiScheduleToFE);
+
+      set((state) => ({
+        ...state,
+        schedules,
+      }));
+    } catch {
+      // nanti kalau mau, tambahin toast error di sini
+    }
+  },
+
+
   /* ===== Auth ===== */
 
   login: async (email, password) => {
@@ -254,6 +360,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       auth: { user: null, isAuthenticated: false, isLoading: false },
       tasks: [],
       transactions: [],
+      schedules: [],
     });
   },
 
@@ -269,15 +376,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   loadData: async () => {
     try {
-      const [tasksApi, txApi] = await Promise.all([
+      const [tasksApi, txApi, schedulesApi] = await Promise.all([
         apiGet<any[]>("/api/tasks"),
         apiGet<any[]>("/api/transactions"),
+        apiGet<any[]>("/api/schedules"),
       ]);
       const tasks = (tasksApi ?? []).map(mapApiTaskToFE);
       const transactions = (txApi ?? []).map(mapApiTxToFE);
-      set((state) => ({ tasks, transactions, auth: state.auth }));
+      const schedules = (schedulesApi ?? []).map(mapApiScheduleToFE);
+
+      set((state) => ({ tasks, transactions, schedules, auth: state.auth }));
     } catch {
-      // optional: tampilkan toast error
+      // optional: toast error
     }
   },
 }));

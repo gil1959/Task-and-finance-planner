@@ -18,13 +18,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { FAB } from "./fab";
 import { useAppStore } from "@/lib/store";
-import { LayoutDashboard, CheckSquare, DollarSign, Settings, Menu, Search, Bell, User, LogOut, BookOpen } from "lucide-react";
+import { LayoutDashboard, CheckSquare, DollarSign, Settings, Menu, Search, CalendarClock, Bell, User, LogOut, BookOpen } from "lucide-react";
 
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Tasks", href: "/tasks", icon: CheckSquare },
   { name: "Finance", href: "/finance", icon: DollarSign },
+  { name: "Schedule", href: "/schedule", icon: CalendarClock },
   { name: "Materi", href: "/materials", icon: BookOpen },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
