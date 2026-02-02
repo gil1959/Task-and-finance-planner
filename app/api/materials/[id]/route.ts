@@ -2,59 +2,55 @@
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-import { prisma } from "@/lib/db";
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
 import { getUserFromCookie } from "@/lib/auth-helpers";
-import { del } from "@vercel/blob";
+import { promises as fs } from "fs";
+import path from "path";
 
-// GET detail (opsional buat tes route)
-export async function GET(
-    _req: Request,
-    ctx: { params: Promise<{ id: string }> } // Next 15: WAJIB await
-) {
-    const me = await getUserFromCookie<{ id: number }>();
-    if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const { id } = await ctx.params;                 // ← penting: await
-    const numericId = Number(id);
-    if (!numericId) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
-
-    const material = await prisma.material.findFirst({
-        where: { id: numericId, userId: me.id },
-    });
-
-    if (!material) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    return NextResponse.json(material);
-}
-
-// DELETE: hapus DB + file Blob (idempotent)
+/**
+ * DELETE /api/materials/[id]
+ * - Hapus record material
+ * - Hapus file audio lokal kalau ada (/public/uploads/...)
+ */
 export async function DELETE(
-    _req: Request,
-    ctx: { params: Promise<{ id: string }> }
+  _req: Request,
+  { params }: { params: { id: string } },
 ) {
-    const me = await getUserFromCookie<{ id: number }>();
-    if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const me = await getUserFromCookie<{ id: number }>();
+  if (!me) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-    const { id } = await ctx.params;                 // ← penting: await
-    const numericId = Number(id);
-    if (!numericId) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  const materialId = Number(params.id);
+  if (Number.isNaN(materialId)) {
+    return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
 
-    const material = await prisma.material.findFirst({
-        where: { id: numericId, userId: me.id },
-    });
+  const material = await prisma.material.findUnique({
+    where: { id: materialId },
+  });
 
-    // Idempotent: kalau sudah hilang, tetap balikin 200
-    if (!material) return NextResponse.json({ ok: true });
+  if (!material || material.userId !== me.id) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
-    // Coba hapus file di Blob; kalau gagal, lanjutkan hapus row
+  // Hapus file audio lokal (kalau ada)
+  if (material.audioUrl && material.audioUrl.startsWith("/uploads/")) {
     try {
-        if (material.audioUrl?.includes("vercel-storage.com")) {
-            await del(material.audioUrl); // butuh BLOB_READ_WRITE_TOKEN
-        }
-    } catch (e) {
-        console.warn("[materials:delete] blob delete warn:", e);
+      // audioUrl contoh: /uploads/materials/uuid.webm
+      const relPath = material.audioUrl.replace(/^\//, "");
+      const absPath = path.join(process.cwd(), "public", relPath);
+      await fs.unlink(absPath);
+    } catch (err) {
+      // Jangan bikin DELETE gagal cuma karena file udah gak ada
+      console.warn("[materials:delete] failed to delete file:", err);
     }
+  }
 
-    await prisma.material.delete({ where: { id: numericId } });
-    return NextResponse.json({ ok: true });
+  await prisma.material.delete({
+    where: { id: materialId },
+  });
+
+  return NextResponse.json({ ok: true });
 }
