@@ -102,17 +102,28 @@ export default function SettingsPage() {
     setLoading(true);
     try {
       const res = await fetch("/api/telegram/test", { method: "POST" });
-      const data = await res.json().catch(() => ({}));
+      
+      let errorMsg = "Gagal mengirim test notif";
+      try {
+        const data = await res.json();
+        if (!res.ok) {
+          errorMsg = data.error || `HTTP Error ${res.status}`;
+        }
+      } catch (e) {
+        // If it's not JSON (like Vercel HTML 500 page)
+        const text = await res.text();
+        errorMsg = `Server error (${res.status}): ${text.substring(0, 100)}...`;
+      }
 
       if (!res.ok) {
-        alert(data.error || "Gagal mengirim test notif");
+        alert(errorMsg);
         return;
       }
 
       alert("Test notif sudah dikirim ke Telegram kamu. Cek bot-nya ya 🚀");
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("Terjadi error saat mengirim test notif");
+      alert("Terjadi error saat mengirim test notif: " + (err?.message || ""));
     } finally {
       setLoading(false);
     }
