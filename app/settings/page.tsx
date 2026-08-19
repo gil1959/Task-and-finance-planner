@@ -146,7 +146,7 @@ export default function SettingsPage() {
                 onClick={handleStartLink}
                 variant={connected ? "outline" : "default"}
               >
-                {connected ? "Generate Ulang Kode" : "Connect Telegram"}
+                {connected ? "Generate Ulang Kode" : "Connect Telegram via Webhook"}
               </Button>
 
               {connected && (
@@ -157,6 +157,25 @@ export default function SettingsPage() {
                     onClick={handleTestNotif}
                   >
                     Kirim Test Notif
+                  </Button>
+
+                  <Button
+                    disabled={loading}
+                    variant="secondary"
+                    onClick={async () => {
+                      setLoading(true);
+                      try {
+                        const res = await fetch("/api/cron/schedule-reminder");
+                        const data = await res.json();
+                        alert("Cron Job dipicu: " + JSON.stringify(data));
+                      } catch (e) {
+                        alert("Gagal memicu cron job.");
+                      } finally {
+                        setLoading(false);
+                      }
+                    }}
+                  >
+                    Trigger Pengingat Jadwal (Cron)
                   </Button>
 
                   <Button
@@ -177,8 +196,49 @@ export default function SettingsPage() {
               </p>
             )}
 
+            {!connected && (
+              <div className="mt-4 p-4 border rounded bg-muted/30 space-y-3">
+                <p className="text-sm font-medium">Cara Alternatif (Wajib untuk Localhost/Dev):</p>
+                <p className="text-xs text-muted-foreground">
+                  Karena kamu menjalankan aplikasi di localhost, webhook Telegram tidak akan bisa masuk. 
+                  Masukkan Chat ID kamu secara manual di sini (kamu bisa melihatnya dari ID yang kamu kirimkan sebelumnya).
+                </p>
+                <div className="flex gap-2 max-w-sm">
+                  <Input 
+                    placeholder="Contoh: 1539437660" 
+                    id="manual-chat-id"
+                  />
+                  <Button 
+                    disabled={loading}
+                    onClick={async () => {
+                      const input = document.getElementById('manual-chat-id') as HTMLInputElement;
+                      if (!input.value) return;
+                      setLoading(true);
+                      try {
+                        const res = await fetch("/api/telegram/save", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ chatId: input.value })
+                        });
+                        if (res.ok) {
+                          setConnected(true);
+                          alert("Telegram berhasil dihubungkan secara manual!");
+                        } else {
+                          alert("Gagal menghubungkan.");
+                        }
+                      } finally {
+                        setLoading(false);
+                      }
+                    }}
+                  >
+                    Simpan ID
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {connected && (
-              <p className="text-xs text-emerald-600">
+              <p className="text-xs text-emerald-600 mt-4">
                 ✅ Telegram sudah terhubung. Pengingat jadwal akan dikirim ke chat bot ini.
               </p>
             )}

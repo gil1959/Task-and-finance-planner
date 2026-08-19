@@ -31,30 +31,33 @@ export async function POST(req: Request) {
   const title = (form.get("title") as string) || "Materi tanpa judul";
   const dateStr = (form.get("date") as string) || new Date().toISOString();
   const durationSec = parseInt((form.get("durationSec") as string) || "0", 10);
+  const transcript = (form.get("transcript") as string) || null;
 
-  if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
+  let publicUrl = null;
 
-  const ext = file.type?.includes("webm")
-    ? "webm"
-    : file.type?.includes("wav")
-      ? "wav"
-      : file.type?.includes("mpeg")
-        ? "mp3"
-        : "webm";
+  if (file && file.size > 0) {
+    const ext = file.type?.includes("webm")
+      ? "webm"
+      : file.type?.includes("wav")
+        ? "wav"
+        : file.type?.includes("mpeg")
+          ? "mp3"
+          : "webm";
 
-  // Simpan ke filesystem lokal (self-host). File ditaruh di: public/uploads/materials
-  const filename = `${randomUUID()}.${ext}`;
-  const uploadDir = path.join(process.cwd(), "public", "uploads", "materials");
-  await fs.mkdir(uploadDir, { recursive: true });
+    // Simpan ke filesystem lokal (self-host). File ditaruh di: public/uploads/materials
+    const filename = `${randomUUID()}.${ext}`;
+    const uploadDir = path.join(process.cwd(), "public", "uploads", "materials");
+    await fs.mkdir(uploadDir, { recursive: true });
 
-  const arrayBuffer = await file.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
 
-  const filePath = path.join(uploadDir, filename);
-  await fs.writeFile(filePath, buffer);
+    const filePath = path.join(uploadDir, filename);
+    await fs.writeFile(filePath, buffer);
 
-  // URL publiknya otomatis bisa diakses via Next.js static public/
-  const publicUrl = `/uploads/materials/${filename}`;
+    // URL publiknya otomatis bisa diakses via Next.js static public/
+    publicUrl = `/uploads/materials/${filename}`;
+  }
 
   const material = await prisma.material.create({
     data: {
@@ -62,6 +65,7 @@ export async function POST(req: Request) {
       date: new Date(dateStr),
       audioUrl: publicUrl,
       durationSec: Number.isNaN(durationSec) ? 0 : durationSec,
+      transcript,
       userId: me.id,
     },
   });

@@ -28,15 +28,12 @@ const SUPPORTED_MIMES = new Set([
 
 export async function POST(
   _req: Request,
-  ctx: { params: Promise<{ id: string }> }, // Next 15: params harus di-await
+  ctx: { params: Promise<{ id: string }> },
 ) {
   try {
     const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey)
-      return NextResponse.json(
-        { error: "Missing GOOGLE_API_KEY" },
-        { status: 500 },
-      );
+      return NextResponse.json({ error: "Missing GOOGLE_API_KEY" }, { status: 500 });
 
     const me = await getUserFromCookie<{ id: number }>();
     if (!me)
@@ -53,17 +50,43 @@ export async function POST(
     if (!material)
       return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    // ============================================================
-    // FIX UTAMA:
-    // - kalau audioUrl = "/uploads/..." => baca file dari filesystem (public/)
-    // - kalau audioUrl URL absolut (mis blob lama) => fetch seperti sebelumnya
-    // ============================================================
+    const genAI = new GoogleGenerativeAI(apiKey);
+    let lastErr: any = null;
+
+    // JIKA ADA TRANSKRIP (dari Speech-to-Text)
+    if (material.transcript) {
+      const prompt = `Ringkas materi kuliah berikut menjadi poin rapi (judul, highlight, bullet, istilah penting) dalam bahasa Indonesia dan jangan ada kalimat yang bold serta tanda **, -- dan sebagainya yang berlebihan.\n\nMateri:\n${material.transcript}`;
+      
+      for (const m of MODELS) {
+        try {
+          const model = genAI.getGenerativeModel({ model: m });
+          const result = await model.generateContent(prompt);
+          const text = result?.response?.text?.() ?? "";
+          if (text && text.trim()) {
+            const updated = await prisma.material.update({
+              where: { id: material.id },
+              data: { summary: text },
+            });
+            return NextResponse.json(updated);
+          }
+          lastErr = { model: m, error: "Empty text()" };
+        } catch (e: any) {
+          lastErr = { model: m, error: e?.message || String(e) };
+        }
+      }
+      return NextResponse.json({ error: "Gagal merangkum teks.", detail: lastErr }, { status: 500 });
+    }
+
+    // FALLBACK: JIKA TIDAK ADA TRANSKRIP (data lama dengan audioUrl)
+    if (!material.audioUrl) {
+      return NextResponse.json({ error: "Tidak ada transkrip atau audio untuk diringkas." }, { status: 400 });
+    }
+
     let bytes: Buffer;
     let mimeType = "application/octet-stream";
 
     if (material.audioUrl.startsWith("/uploads/")) {
-      // audioUrl contoh: /uploads/materials/xxxx.webm
-      const relPath = material.audioUrl.replace(/^\//, ""); // uploads/materials/xxxx.webm
+      const relPath = material.audioUrl.replace(/^\//, "");
       const absPath = path.join(process.cwd(), "public", relPath);
       bytes = await fs.readFile(absPath);
 
@@ -72,16 +95,9 @@ export async function POST(
       else if (material.audioUrl.endsWith(".ogg")) mimeType = "audio/ogg";
       else if (material.audioUrl.endsWith(".webm")) mimeType = "audio/webm";
     } else {
-      // --- fetch audio dari URL absolut (blob lama, dll) ---
       const fileRes = await fetch(material.audioUrl);
       if (!fileRes.ok) {
-        return NextResponse.json(
-          {
-            error: `Cannot fetch audio (${fileRes.status})`,
-            url: material.audioUrl,
-          },
-          { status: 400 },
-        );
+        return NextResponse.json({ error: `Cannot fetch audio (${fileRes.status})`, url: material.audioUrl }, { status: 400 });
       }
 
       const arr = await fileRes.arrayBuffer();
@@ -101,53 +117,27 @@ export async function POST(
                 : "application/octet-stream");
     }
 
-    // batasi ukuran ±18MB untuk aman
     const MAX = 18 * 1024 * 1024;
     if (bytes.byteLength > MAX) {
-      return NextResponse.json(
-        {
-          error: `File audio terlalu besar: ${(bytes.byteLength / 1024 / 1024).toFixed(2)} MB (maks ~18 MB)`,
-        },
-        { status: 413 },
-      );
+      return NextResponse.json({ error: `File audio terlalu besar: ${(bytes.byteLength / 1024 / 1024).toFixed(2)} MB (maks ~18 MB)` }, { status: 413 });
     }
 
-    // 🔽 PATCH: normalisasi kalau terdeteksi video/webm
-    if (mimeType.startsWith("video/webm")) {
-      mimeType = "audio/webm";
-    }
-
-    // 🔽 PATCH tambahan: kalau mimetype nggak jelas, coba sniff signature WebM (1A 45 DF A3)
+    if (mimeType.startsWith("video/webm")) mimeType = "audio/webm";
     if (mimeType === "application/octet-stream") {
-      const isWebm =
-        bytes.length > 4 &&
-        bytes[0] === 0x1a &&
-        bytes[1] === 0x45 &&
-        bytes[2] === 0xdf &&
-        bytes[3] === 0xa3;
+      const isWebm = bytes.length > 4 && bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3;
       if (isWebm) mimeType = "audio/webm";
     }
 
-    // Optional guard: kasih error jelas kalau mime aneh
     if (!SUPPORTED_MIMES.has(mimeType)) {
-      return NextResponse.json(
-        { error: `Unsupported mimeType: ${mimeType}. Coba MP3/WAV/OGG/WebM.` },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: `Unsupported mimeType: ${mimeType}. Coba MP3/WAV/OGG/WebM.` }, { status: 400 });
     }
 
     const base64 = bytes.toString("base64");
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const prompt =
-      "Ringkas materi kuliah ini menjadi poin rapi (judul, highlight, bullet, istilah penting) dalam bahasa Indonesia dan jangan ada kalimat yang bold serta tanda **, -- dan sebagai nya yang brlebihan.";
-
-    let lastErr: any = null;
+    const prompt = "Ringkas materi kuliah ini menjadi poin rapi (judul, highlight, bullet, istilah penting) dalam bahasa Indonesia dan jangan ada kalimat yang bold serta tanda **, -- dan sebagai nya yang brlebihan.";
 
     for (const m of MODELS) {
       try {
         const model = genAI.getGenerativeModel({ model: m });
-
         const result = await model.generateContent([
           { text: prompt },
           { inlineData: { mimeType, data: base64 } },
@@ -165,28 +155,17 @@ export async function POST(
         lastErr = { model: m, error: "Empty text()" };
       } catch (e: any) {
         lastErr = { model: m, error: e?.message || String(e) };
-
         if (/mime/i.test(String(e)) || /unsupported/i.test(String(e))) {
           return NextResponse.json(
-            {
-              error:
-                "Format audio tidak didukung model. Coba unggah MP3/WAV/OGG (webm/opus sering ditolak oleh Gemini).",
-              detail: lastErr,
-            },
+            { error: "Format audio tidak didukung model.", detail: lastErr },
             { status: 400 },
           );
         }
       }
     }
 
-    return NextResponse.json(
-      { error: "Gagal merangkum (semua model gagal).", detail: lastErr },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Gagal merangkum (semua model gagal).", detail: lastErr }, { status: 500 });
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || String(e) },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: e?.message || String(e) }, { status: 500 });
   }
 }

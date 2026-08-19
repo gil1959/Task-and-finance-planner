@@ -3,9 +3,9 @@ generator client {
 }
 
 datasource db {
-  provider  = "mysql"
+  provider  = "postgresql"
   url       = env("DATABASE_URL")
-  // kalau mau, boleh pakai directUrl juga, tapi harus MySQL juga:
+  // kalau mau, boleh pakai directUrl juga:
   // directUrl = env("DIRECT_URL")
 }
 
@@ -136,7 +136,7 @@ model Material {
   id          Int      @id @default(autoincrement())
   title       String
   date        DateTime @default(now())
-  audioUrl    String
+  audioUrl    String?
   durationSec Int
   transcript  String?  @db.Text
   summary     String?  @db.Text
