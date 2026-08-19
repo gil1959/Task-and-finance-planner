@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
 import { Button } from "@/components/ui/button";
-
+import { Input } from "@/components/ui/input";
 export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [connected, setConnected] = useState<boolean | null>(null);
