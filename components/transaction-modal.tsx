@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useAppStore } from "@/lib/store"
 import type { Transaction } from "@/lib/types"
 
 interface TransactionModalProps {
@@ -18,11 +19,9 @@ interface TransactionModalProps {
   onSave: (transactionData: Omit<Transaction, "id">) => void
 }
 
-const incomeCategories = ["Gaji", "Freelance", "Bonus", "Investasi", "Lainnya"]
-const expenseCategories = ["Makan", "Transport", "Belanja", "Tagihan", "Hiburan", "Kesehatan", "Lainnya"]
-const investmentCategories = ["Saham", "Reksa Dana", "Crypto", "Emas", "Deposito", "Lainnya"]
-
 export function TransactionModal({ open, onOpenChange, transaction, onSave }: TransactionModalProps) {
+  const categories = useAppStore(s => s.categories)
+
   const [formData, setFormData] = useState({
     type: "expense" as const,
     amount: "",
@@ -57,14 +56,7 @@ export function TransactionModal({ open, onOpenChange, transaction, onSave }: Tr
   }, [transaction, open])
 
   const getCategories = () => {
-    switch (formData.type) {
-      case "income":
-        return incomeCategories
-      case "expense":
-        return expenseCategories
-      case "investment":
-        return investmentCategories
-    }
+    return categories.filter(c => c.type === formData.type).map(c => c.name)
   }
 
   const validateForm = () => {

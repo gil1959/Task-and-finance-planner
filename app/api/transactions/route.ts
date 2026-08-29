@@ -28,20 +28,29 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: "Invalid type" }, { status: 400 });
         }
 
-        const amountStr =
-            body?.amount === undefined || body?.amount === null
-                ? "0"
-                : String(body.amount);
+        let categoryId = null;
+        if (body.category) {
+            let cat = await prisma.category.findFirst({
+                where: { userId: user.id, name: body.category, type: type as any },
+            });
+            if (!cat) {
+                cat = await prisma.category.create({
+                    data: { userId: user.id, name: body.category, type: type as any },
+                });
+            }
+            categoryId = cat.id;
+        }
 
         const created = await prisma.transaction.create({
             data: {
                 userId: user.id,
                 type: type as any,
-                amount: new Prisma.Decimal(Number(body.amount ?? 0)),      // ✅ aman untuk Decimal
+                amount: new Prisma.Decimal(Number(body.amount ?? 0)),
                 date: body?.date ? new Date(body.date) : new Date(),
                 note: body?.note ?? null,
-                // categoryId: body?.categoryId ?? null,
+                categoryId,
             },
+            include: { category: true },
         });
 
         return NextResponse.json(created, { status: 201 });

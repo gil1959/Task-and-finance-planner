@@ -15,17 +15,19 @@ model User {
   password           String // simpan hash di sini
   name               String
   emailVerified      DateTime? // <— tambahkan ini untuk verifikasi email
+  initialBalance     Decimal             @default(0)
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   tasks              Task[]
   telegramChatId     String? 
-   telegramLinkCode   String?
+  telegramLinkCode   String?
   transactions       Transaction[]
   budgets            Budget[]
   categories         Category[]
   verificationTokens VerificationToken[]
   materials          Material[]
   schedules          Schedule[]
+  financeInsights    FinanceInsight[]
 }
 
 model VerificationToken {
@@ -69,7 +71,7 @@ model Schedule {
   lecturer    String?
   semester    String
   reminderHoursBefore Int? @default(0)
-reminderSentDate String?  
+  reminderSentDate String?  
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -83,18 +85,13 @@ model Category {
   id        Int          @id @default(autoincrement())
   userId    Int
   name      String
-  type      CategoryType
+  type      TranType
   createdAt DateTime     @default(now())
 
   user User          @relation(fields: [userId], references: [id])
   tx   Transaction[]
 
   @@unique([userId, name, type])
-}
-
-enum CategoryType {
-  INCOME
-  EXPENSE
 }
 
 enum TranType {
@@ -130,6 +127,19 @@ model Budget {
   user User @relation(fields: [userId], references: [id])
 
   @@unique([userId, month, year])
+}
+
+model FinanceInsight {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  startDate DateTime
+  endDate   DateTime
+  insight   String   @db.Text
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Material {

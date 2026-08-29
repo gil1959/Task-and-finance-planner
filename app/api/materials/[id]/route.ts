@@ -15,14 +15,15 @@ import path from "path";
  */
 export async function DELETE(
   _req: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const me = await getUserFromCookie<{ id: number }>();
   if (!me) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const materialId = Number(params.id);
+  const resolvedParams = await params;
+  const materialId = Number(resolvedParams.id);
   if (Number.isNaN(materialId)) {
     return NextResponse.json({ error: "Invalid id" }, { status: 400 });
   }

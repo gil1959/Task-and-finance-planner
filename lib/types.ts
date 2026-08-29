@@ -43,10 +43,25 @@ export interface ScheduleItem {
   createdAt: string;
 }
 
+export interface Category {
+  id: string;
+  name: string;
+  type: "income" | "expense" | "investment";
+}
+
+export interface FinanceInsight {
+  id: string;
+  month: number;
+  year: number;
+  insight: string;
+  createdAt: string;
+}
+
 export interface User {
   id: number;                 // <— number (bukan string)
   email: string;
   name: string | null;        // <— nullable (sesuai DB)
+  initialBalance?: number;
   createdAt?: string;         // <— opsional (JSON serialize dari Date)
 }
 
@@ -60,5 +75,8 @@ export interface AppState {
   tasks: Task[];
   transactions: Transaction[];
   schedules: ScheduleItem[];
+  categories: Category[];
+  financeInsight: FinanceInsight | null;
   auth: AuthState;
 }
+

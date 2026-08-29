@@ -143,6 +143,17 @@ interface AppStore extends AppState {
   updateTransaction: (id: string | number, updates: Partial<Transaction>) => Promise<void>;
   deleteTransaction: (id: string | number) => Promise<void>;
 
+  // Categories
+  addCategory: (name: string, type: string) => Promise<void>;
+  updateCategory: (id: string | number, name: string, type: string) => Promise<void>;
+  deleteCategory: (id: string | number) => Promise<void>;
+
+  // Balance
+  updateInitialBalance: (balance: number) => Promise<void>;
+
+  // Insights
+  loadFinanceInsight: () => Promise<void>;
+
   // 🔔 Jadwal Kuliah
   addSchedule: (data: Omit<ScheduleItem, "id" | "createdAt">) => Promise<void>;
   updateSchedule: (id: string | number, updates: Partial<ScheduleItem>) => Promise<void>;
@@ -169,8 +180,9 @@ interface AppStore extends AppState {
 export const useAppStore = create<AppStore>((set, get) => ({
   tasks: [],
   transactions: [],
-
   schedules: [],
+  categories: [],
+  financeInsight: null,
 
   auth: {
     user: null,
@@ -256,6 +268,51 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({
       transactions: state.transactions.filter((x) => x.id !== String(id)),
     }));
+  },
+
+  /* ===== Categories (API) ===== */
+  addCategory: async (name, type) => {
+    const payload = { name, type };
+    const created = await apiPost<any>("/api/categories", payload);
+    set((state) => ({ categories: [...state.categories, created] }));
+  },
+
+  updateCategory: async (id, name, type) => {
+    const payload = { name, type };
+    const updated = await apiPut<any>(`/api/categories/${id}`, payload);
+    set((state) => ({
+      categories: state.categories.map((c) => (c.id === String(id) ? updated : c)),
+    }));
+  },
+
+  deleteCategory: async (id) => {
+    await apiDelete(`/api/categories/${id}`);
+    set((state) => ({
+      categories: state.categories.filter((c) => c.id !== String(id)),
+    }));
+  },
+
+  /* ===== Balance (API) ===== */
+  updateInitialBalance: async (balance) => {
+    const res = await apiPut<any>("/api/user/balance", { balance });
+    set((state) => ({
+      auth: {
+        ...state.auth,
+        user: state.auth.user ? { ...state.auth.user, initialBalance: res.balance } : null,
+      },
+    }));
+  },
+
+  /* ===== Finance Insight (API) ===== */
+  loadFinanceInsight: async () => {
+    try {
+      const data = await apiGet<any>("/api/finance/insight");
+      if (data && !data.error) {
+        set({ financeInsight: data });
+      }
+    } catch {
+      // ignore
+    }
   },
 
   /* ===== Schedules (API) ===== */
@@ -376,16 +433,32 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   loadData: async () => {
     try {
-      const [tasksApi, txApi, schedulesApi] = await Promise.all([
+      const [tasksApi, txApi, schedulesApi, categoriesApi, balanceApi] = await Promise.all([
         apiGet<any[]>("/api/tasks"),
         apiGet<any[]>("/api/transactions"),
         apiGet<any[]>("/api/schedules"),
+        apiGet<any[]>("/api/categories"),
+        apiGet<any>("/api/user/balance"),
       ]);
       const tasks = (tasksApi ?? []).map(mapApiTaskToFE);
       const transactions = (txApi ?? []).map(mapApiTxToFE);
       const schedules = (schedulesApi ?? []).map(mapApiScheduleToFE);
+      const categories = (categoriesApi ?? []).map((c) => ({
+        id: String(c.id),
+        name: c.name,
+        type: String(c.type).toLowerCase() as any,
+      }));
 
-      set((state) => ({ tasks, transactions, schedules, auth: state.auth }));
+      const currentUser = get().auth.user;
+      const updatedUser = currentUser ? { ...currentUser, initialBalance: balanceApi?.balance ?? 0 } : null;
+
+      set((state) => ({ 
+        tasks, 
+        transactions, 
+        schedules, 
+        categories,
+        auth: { ...state.auth, user: updatedUser } 
+      }));
     } catch {
       // optional: toast error
     }
