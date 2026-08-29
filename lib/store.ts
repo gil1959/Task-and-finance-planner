@@ -274,14 +274,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
   addCategory: async (name, type) => {
     const payload = { name, type };
     const created = await apiPost<any>("/api/categories", payload);
-    set((state) => ({ categories: [...state.categories, created] }));
+    set((state) => ({ 
+      categories: [...state.categories, {
+        id: String(created.id),
+        name: created.name,
+        type: String(created.type).toLowerCase() as any,
+      }] 
+    }));
   },
 
   updateCategory: async (id, name, type) => {
     const payload = { name, type };
     const updated = await apiPut<any>(`/api/categories/${id}`, payload);
+    const fe = {
+      id: String(updated.id),
+      name: updated.name,
+      type: String(updated.type).toLowerCase() as any,
+    };
     set((state) => ({
-      categories: state.categories.map((c) => (c.id === String(id) ? updated : c)),
+      categories: state.categories.map((c) => (c.id === String(id) ? fe : c)),
     }));
   },
 
@@ -298,7 +309,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({
       auth: {
         ...state.auth,
-        user: state.auth.user ? { ...state.auth.user, initialBalance: res.balance } : null,
+        user: state.auth.user ? { ...state.auth.user, initialBalance: Number(res.balance ?? 0) } : null,
       },
     }));
   },
@@ -450,7 +461,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }));
 
       const currentUser = get().auth.user;
-      const updatedUser = currentUser ? { ...currentUser, initialBalance: balanceApi?.balance ?? 0 } : null;
+      const updatedUser = currentUser ? { ...currentUser, initialBalance: Number(balanceApi?.balance ?? 0) } : null;
 
       set((state) => ({ 
         tasks, 

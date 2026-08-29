@@ -50,10 +50,11 @@ export async function DELETE(
     });
 
     if (transactions > 0) {
-      return NextResponse.json(
-        { error: "Kategori tidak bisa dihapus karena masih digunakan pada transaksi." },
-        { status: 400 }
-      );
+      // Hapus relasi pada transaksi agar kategori bisa dihapus
+      await prisma.transaction.updateMany({
+        where: { categoryId, userId: user.id },
+        data: { categoryId: null },
+      });
     }
 
     const deleted = await prisma.category.deleteMany({

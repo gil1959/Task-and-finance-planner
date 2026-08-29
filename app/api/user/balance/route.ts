@@ -19,14 +19,17 @@ export async function PUT(req: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    const { balance } = await req.json();
+    const body = await req.json();
+    const balanceVal = Number(body.balance || 0);
+
     const updated = await prisma.user.update({
       where: { id: user.id },
-      data: { initialBalance: balance },
+      data: { initialBalance: balanceVal },
       select: { initialBalance: true },
     });
-    return NextResponse.json({ balance: updated.initialBalance });
+    return NextResponse.json({ balance: Number(updated.initialBalance) });
   } catch (e: any) {
+    console.error("Balance Update Error:", e);
     return NextResponse.json({ error: e?.message || "Failed" }, { status: 500 });
   }
 }
