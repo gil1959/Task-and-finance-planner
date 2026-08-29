@@ -6,10 +6,30 @@ export async function GET() {
   const user = await getUserFromCookie<{ id: number }>();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const categories = await prisma.category.findMany({
+  let categories = await prisma.category.findMany({
     where: { userId: user.id },
     orderBy: { name: "asc" },
   });
+
+  if (categories.length === 0) {
+    await prisma.category.createMany({
+      data: [
+        { userId: user.id, name: "Gaji", type: "INCOME" },
+        { userId: user.id, name: "Investasi", type: "INCOME" },
+        { userId: user.id, name: "Makan", type: "EXPENSE" },
+        { userId: user.id, name: "Transport", type: "EXPENSE" },
+        { userId: user.id, name: "Belanja", type: "EXPENSE" },
+        { userId: user.id, name: "Saham", type: "INVESTMENT" },
+        { userId: user.id, name: "Reksa Dana", type: "INVESTMENT" },
+      ],
+      skipDuplicates: true,
+    });
+    categories = await prisma.category.findMany({
+      where: { userId: user.id },
+      orderBy: { name: "asc" },
+    });
+  }
+
   return NextResponse.json(categories);
 }
 

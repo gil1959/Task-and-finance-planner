@@ -53,11 +53,16 @@ export function FinanceSummary({ transactions, initialBalance, onUpdateInitialBa
     .reduce((sum, t) => sum + t.amount, 0)
 
   const handleSaveBalance = async () => {
-    const val = Number.parseFloat(tempBalance)
-    if (!isNaN(val)) {
-      await onUpdateInitialBalance(val)
+    try {
+      const val = Number.parseFloat(tempBalance)
+      if (!isNaN(val)) {
+        await onUpdateInitialBalance(val)
+      }
+      setIsEditingBalance(false)
+    } catch (e: any) {
+      alert("Gagal menyimpan saldo awal: " + (e.message || "Unknown error"))
+      setIsEditingBalance(false)
     }
-    setIsEditingBalance(false)
   }
 
   return (
